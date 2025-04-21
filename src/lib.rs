@@ -34,6 +34,7 @@ mod tag {
 
     pub mod p {
         use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
 
         #[derive(Clone)]
         pub struct TagP {}
@@ -49,6 +50,47 @@ mod tag {
 
         pub fn p() -> TagP {
             TagP {}
+        }
+
+        impl<W: std::fmt::Write> EnterableTag<W> for TagP {
+            type Sink<'a> = PSink<'a, W> where W: 'a;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                PSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct PSink<'a, W: std::fmt::Write> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: std::fmt::Write> PSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                // TODO: document pretty-printing makes this optional
+                self.sink.write_str("\n")?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: std::fmt::Write> Drop for PSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.write_str("</p>").expect("can write closing tag");
+                self.sink.write_str("\n").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: std::fmt::Write> Sink<W> for PSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                tag.prepare_sink(&mut self.sink)
+            }
         }
     }
 
@@ -289,13 +331,9 @@ mod tag {
             }
         }
 
-        impl<'a, T: std::fmt::Write + ?Sized> HeaderSink<'a, T> {
-            pub fn open_tag<'b, Tag: SinkableTag>(&'b mut self, tag: Tag) -> crate::tag::HtmlSink<'b, T> {
-                tag.write_opening_tag(&mut self.sink).expect("opening tag");
-                crate::tag::HtmlSink {
-                    sink: &mut self.sink,
-                    closing_tag: tag.closing_tag(),
-                }
+        impl<'a, W: std::fmt::Write> Sink<W> for HeaderSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                tag.prepare_sink(&mut self.sink)
             }
         }
 
@@ -303,7 +341,7 @@ mod tag {
 
     pub mod th {
         use crate::tag::{EnterableTag, Sink, SinkableTag};
-        use crate::attribute_escape;
+        use crate::{attribute_escape, html_escape};
 
         #[derive(Clone)]
         pub struct TagTh {
@@ -337,6 +375,47 @@ mod tag {
         pub fn th() -> TagTh {
             TagTh {
                 class: None,
+            }
+        }
+
+        impl<W: std::fmt::Write> EnterableTag<W> for TagTh {
+            type Sink<'a> = ThSink<'a, W> where W: 'a;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                ThSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct ThSink<'a, W: std::fmt::Write> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: std::fmt::Write> ThSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                // TODO: document pretty-printing makes this optional
+                self.sink.write_str("\n")?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: std::fmt::Write> Drop for ThSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.write_str("</th>").expect("can write closing tag");
+                self.sink.write_str("\n").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: std::fmt::Write> Sink<W> for ThSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                tag.prepare_sink(&mut self.sink)
             }
         }
     }
@@ -710,11 +789,6 @@ mod tag {
                 closing_tag: tag.closing_tag(),
             }
         }
-
-        pub fn text(&mut self, text: &str) -> std::fmt::Result {
-            // TODO: allow a type param to indicate escapedness, escape here..
-            self.sink.write_str(&crate::html_escape(text))
-        }
     }
 
 
@@ -808,7 +882,7 @@ pub fn example() -> Result<String, std::fmt::Error> {
     }
 
     {
-        let mut description = html.untyped_open_tag(p());
+        let mut description = html.open_tag(p());
         match repos.len() {
             0 => description.text("no repos configured, so there are no builds")?,
             1 => description.text("1 repo configured")?,
