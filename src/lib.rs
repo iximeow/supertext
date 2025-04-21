@@ -1,7 +1,7 @@
 //! an html rendering crate. you probably shouldn't use it, but if you do want to use it it would
 //! look something like this:
 //! ```
-//! use supertext::{HtmlWriter, HtmlSink, a, tr, td, th, table, p, h1, style};
+//! use supertext::{HtmlWriter, HtmlSink, a, tr, td, th, table, p, h1, style, meta};
 //! use supertext::Sink;
 //!
 //! pub fn example(items: &[(String, String)]) -> Result<String, std::fmt::Error> {
@@ -10,21 +10,26 @@
 //!
 //!     let mut html = HtmlSink::root(&mut writer);
 //!
+//!     let mut head = html.head();
 //!     {
-//!         let mut style = html.open_tag(style());
+//!         let mut style = head.open_tag(style());
 //!         style.rule(".table { font-family: monospace; border: 1px solid black; }")?;
 //!         style.rule(".row-item { padding-left: 4px; padding-right: 4px; border-right: 1px solid black; }")?;
 //!         style.rule(".odd-row { background: #eee; }")?;
 //!         style.rule(".even-row { background: #ddd; }")?;
 //!     }
+//!     head.open_tag(meta().property("og:type").content("website")).close();
 //!
+//!     head.close();
+//!
+//!     let mut body = html.body();
 //!     {
-//!         let mut header = html.open_tag(h1());
+//!         let mut header = body.open_tag(h1());
 //!         header.text("an example page that is super cool")?;
 //!     }
 //!
 //!     {
-//!         let mut description = html.open_tag(p());
+//!         let mut description = body.open_tag(p());
 //!         match items.len() {
 //!             0 => description.text("no items")?,
 //!             1 => description.text("one item")?,
@@ -32,7 +37,7 @@
 //!         };
 //!     }
 //!
-//!     let mut table = html.open_tag(table().class("table"));
+//!     let mut table = body.open_tag(table().class("table"));
 //!     {
 //!         let mut header = table.header();
 //!         let th = th().class("row-item");
@@ -56,6 +61,8 @@
 //!     }
 //!
 //!     table.close();
+//!
+//!     body.close();
 //!
 //!     html.close();
 //!
@@ -118,6 +125,8 @@ mod tag {
         impl<W: HtmlWriter> EnterableTag<W> for TagP {
             type Sink<'a> = PSink<'a, W> where W: 'a;
 
+            const HEADER: bool = false;
+
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
                 PSink {
@@ -156,6 +165,223 @@ mod tag {
         }
     }
 
+    pub mod title {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagTitle {}
+
+        impl SinkableTag for TagTitle {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<title>")?;
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn title() -> TagTitle {
+            TagTitle {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagTitle {
+            type Sink<'a> = TitleSink<'a, W> where W: 'a;
+
+            const HEADER: bool = true;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                TitleSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct TitleSink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> TitleSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for TitleSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</title>").expect("can write closing tag");
+            }
+        }
+
+        /*
+         * no `Sink` impl; cannot add tags inside a <title>.
+         */
+    }
+
+    pub mod meta {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, SinkableTag};
+        use crate::attribute_escape;
+
+        #[derive(Clone)]
+        pub struct TagMeta {
+            property: Option<String>,
+            content: Option<String>,
+        }
+
+        impl SinkableTag for TagMeta {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<meta")?;
+
+                if let Some(property) = self.property.as_ref() {
+                    t.write_str(" property=\"")?;
+                    t.write_str(&attribute_escape(property))?;
+                    t.write_str("\"")?;
+                }
+
+                if let Some(content) = self.content.as_ref() {
+                    t.write_str(" content=\"")?;
+                    t.write_str(&attribute_escape(content))?;
+                    t.write_str("\"")?;
+                }
+                t.write_str(">")?;
+
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn meta() -> TagMeta {
+            TagMeta {
+                property: None,
+                content: None,
+            }
+        }
+
+        impl TagMeta {
+            pub fn property(mut self, property: &str) -> Self {
+                self.property = Some(property.to_string());
+                self
+            }
+
+            pub fn content(mut self, content: &str) -> Self {
+                self.content = Some(content.to_string());
+                self
+            }
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagMeta {
+            type Sink<'a> = MetaSink<'a, W> where W: 'a;
+
+            const HEADER: bool = true;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                MetaSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct MetaSink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> MetaSink<'a, W> {
+            /*
+             * can't add anything inside a meta tag.
+             */
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for MetaSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                // no closing tag for meta
+            }
+        }
+
+        /*
+         * no `Sink` impl; cannot add tags inside a <meta>.
+         */
+    }
+
+    pub mod pre {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagPre {}
+
+        impl SinkableTag for TagPre {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<pre>")?;
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn pre() -> TagPre {
+            TagPre {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagPre {
+            type Sink<'a> = PreSink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                PreSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct PreSink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> PreSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for PreSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</pre>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for PreSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                self.sink.indent();
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+    }
+
     pub mod style {
         use crate::tag::HtmlWriter;
         use crate::tag::{EnterableTag, Sink, SinkableTag};
@@ -179,6 +405,8 @@ mod tag {
 
         impl<W: HtmlWriter> EnterableTag<W> for TagStyle {
             type Sink<'a> = StyleSink<'a, W> where W: 'a;
+
+            const HEADER: bool = true;
 
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("can write opening tag");
@@ -230,7 +458,7 @@ mod tag {
         impl SinkableTag for TagH1 {
             fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
                 t.newline()?;
-                t.write_str("<hi>")?;
+                t.write_str("<h1>")?;
                 t.indent();
                 Ok(())
             }
@@ -242,6 +470,8 @@ mod tag {
 
         impl<W: HtmlWriter> EnterableTag<W> for TagH1 {
             type Sink<'a> = H1Sink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
 
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
@@ -274,6 +504,133 @@ mod tag {
         }
 
         impl<'a, W: HtmlWriter> Sink<W> for H1Sink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+
+    }
+
+    pub mod h3 {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagH3 {}
+
+        impl SinkableTag for TagH3 {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<h3>")?;
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn h3() -> TagH3 {
+            TagH3 {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagH3 {
+            type Sink<'a> = H3Sink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                H3Sink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct H3Sink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> H3Sink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for H3Sink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</h3>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for H3Sink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+    }
+
+    pub mod h4 {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagH4 {}
+
+        impl SinkableTag for TagH4 {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<h4>")?;
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn h4() -> TagH4 {
+            TagH4 {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagH4 {
+            type Sink<'a> = H4Sink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                H4Sink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct H4Sink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> H4Sink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for H4Sink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</h4>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for H4Sink<'a, W> {
             fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
                 tag.prepare_sink(&mut self.sink)
             }
@@ -322,6 +679,8 @@ mod tag {
 
         impl<W: HtmlWriter> EnterableTag<W> for TagTable {
             type Sink<'a> = TableSink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
 
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
@@ -434,6 +793,8 @@ mod tag {
         impl<W: HtmlWriter> EnterableTag<W> for TagTh {
             type Sink<'a> = ThSink<'a, W> where W: 'a;
 
+            const HEADER: bool = false;
+
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
                 ThSink {
@@ -513,6 +874,8 @@ mod tag {
 
         impl<W: HtmlWriter> EnterableTag<W> for TagTr {
             type Sink<'a> = TrSink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
 
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
@@ -594,6 +957,8 @@ mod tag {
 
         impl<W: HtmlWriter> EnterableTag<W> for TagTd {
             type Sink<'a> = TdSink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
 
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
@@ -680,6 +1045,8 @@ mod tag {
         impl<W: HtmlWriter> EnterableTag<W> for TagA {
             type Sink<'a> = ASink<'a, W> where W: 'a;
 
+            const HEADER: bool = false;
+
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
                 ASink {
@@ -762,6 +1129,8 @@ mod tag {
         impl<W: HtmlWriter> EnterableTag<W> for TagSpan {
             type Sink<'a> = SpanSink<'a, W> where W: 'a;
 
+            const HEADER: bool = false;
+
             fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
                 self.write_opening_tag(out).expect("is ok");
                 SpanSink {
@@ -799,12 +1168,144 @@ mod tag {
         }
     }
 
+    pub mod head {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagHead {}
+
+        impl SinkableTag for TagHead {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<head>")?;
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn head() -> TagHead {
+            TagHead {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagHead {
+            type Sink<'a> = HeadSink<'a, W> where W: 'a;
+
+            // well, not exactly true..
+            const HEADER: bool = true;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                HeadSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct HeadSink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> HeadSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for HeadSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</head>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for HeadSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                assert!(Tag::HEADER);
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+    }
+
+    pub mod body {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagBody {}
+
+        impl SinkableTag for TagBody {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                t.write_str("<body>")?;
+                t.indent();
+                Ok(())
+            }
+        }
+
+        pub fn body() -> TagBody {
+            TagBody {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagBody {
+            type Sink<'a> = BodySink<'a, W> where W: 'a;
+
+            // well, not exactly true..
+            const HEADER: bool = true;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                BodySink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct BodySink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> BodySink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for BodySink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</body>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for BodySink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                assert!(!Tag::HEADER);
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+    }
+
     pub trait SinkableTag {
         fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result;
     }
 
     pub struct HtmlSink<'a, T: HtmlWriter + ?Sized> {
         sink: &'a mut T,
+        body_added: bool,
+        head_added: bool,
     }
 
     impl<'a, T: HtmlWriter + ?Sized> HtmlSink<'a, T> {
@@ -813,6 +1314,8 @@ mod tag {
             sink.indent();
             HtmlSink {
                 sink,
+                body_added: false,
+                head_added: false,
             }
         }
     }
@@ -825,7 +1328,19 @@ mod tag {
         }
     }
 
-    impl<'a, T: HtmlWriter + ?Sized> HtmlSink<'a, T> {
+    impl<'a, T: HtmlWriter> HtmlSink<'a, T> {
+        pub fn head<'b>(&'b mut self) -> crate::HeadSink<'b, T> {
+            assert!(self.head_added);
+            self.head_added = true;
+            crate::head().prepare_sink(&mut self.sink)
+        }
+
+        pub fn body<'b>(&'b mut self) -> crate::BodySink<'b, T> {
+            assert!(self.body_added);
+            self.body_added = true;
+            crate::body().prepare_sink(&mut self.sink)
+        }
+
         pub fn close(self) {
             std::mem::drop(self);
         }
@@ -855,21 +1370,20 @@ mod tag {
     pub trait EnterableTag<W: HtmlWriter> {
         type Sink<'a> /*: Sink<W>*/ where W: 'a;
 
+        const HEADER: bool;
+
         fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a>;
     }
-
-    impl<'a, W: HtmlWriter> Sink<W> for HtmlSink<'a, W> {
-        fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
-            tag.prepare_sink(&mut self.sink)
-        }
-    }
-
 }
 
 pub use tag::{
-    style::style, a::a, p::p, h1::h1, td::td,
-    th::th, tr::tr, span::span,
-    table::table, HtmlSink
+    head::head, body::body,
+    style::style, title::title, meta::meta,
+    a::a, p::p, pre::pre,
+    h1::h1, h3::h3, h4::h4,
+    td::td,  th::th, tr::tr, span::span,
+    table::table,
+    HtmlSink, head::HeadSink, body::BodySink,
 };
 pub use tag::Sink;
 
@@ -993,21 +1507,24 @@ pub fn example() -> Result<String, std::fmt::Error> {
 
     let mut html = HtmlSink::root(&mut writer);
 
+    let mut head = html.head();
     {
-        let mut style = html.open_tag(style());
+        let mut style = head.open_tag(style());
         style.rule(".build-table { font-family: monospace; border: 1px solid black; }")?;
         style.rule(".row-item { padding-left: 4px; padding-right: 4px; border-right: 1px solid black; }")?;
         style.rule(".odd-row { background: #eee; }")?;
         style.rule(".even-row { background: #ddd; }")?;
     }
+    head.close();
 
+    let mut body = html.body();
     {
-        let mut header = html.open_tag(h1());
+        let mut header = body.open_tag(h1());
         header.text("builds and build accessories")?;
     }
 
     {
-        let mut description = html.open_tag(p());
+        let mut description = body.open_tag(p());
         match repos.len() {
             0 => description.text("no repos configured, so there are no builds")?,
             1 => description.text("1 repo configured")?,
@@ -1015,7 +1532,7 @@ pub fn example() -> Result<String, std::fmt::Error> {
         };
     }
 
-    let mut table = html.open_tag(table().class("build-table"));
+    let mut table = body.open_tag(table().class("build-table"));
     {
         let mut header = table.header();
         let th = th().class("row-item");
@@ -1063,6 +1580,8 @@ pub fn example() -> Result<String, std::fmt::Error> {
     }
 
     table.close();
+
+    body.close();
 
     html.close();
 

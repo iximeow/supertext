@@ -1,6 +1,6 @@
 [package]
 name = "supertext"
-version = "0.0.1"
+version = "0.0.2"
 authors = [ "iximeow <me@iximeow.net>" ]
 license = "0BSD"
 repository = "http://git.iximeow.net/supertext/"
