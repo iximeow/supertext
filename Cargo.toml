@@ -1,7 +1,11 @@
 [package]
 name = "supertext"
 version = "0.1.0"
+authors = [ "iximeow <me@iximeow.net>" ]
+license = "0BSD"
+repository = "http://git.iximeow.net/supertext/"
+description = "html document tools"
+readme = "README.md"
 edition = "2024"
-crate_type = "bin"
 
 [dependencies]
