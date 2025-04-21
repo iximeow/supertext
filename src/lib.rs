@@ -1,32 +1,33 @@
-fn main() {
-    println!("{}", example().expect("is ok"));
-}
+// TODO: obv remove
+#![allow(dead_code)]
 
+// it'd be nice if these didn't require reallocating the string even if no characters were escaped.
+// that's hard and i want to cry.
 fn css_escape(s: &str) -> String {
     s
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;")
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 fn attribute_escape(s: &str) -> String {
     s
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;")
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 fn html_escape(s: &str) -> String {
     s
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;")
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 mod tag {
@@ -42,9 +43,6 @@ mod tag {
         impl SinkableTag for TagP {
             fn write_opening_tag(&self, t: &mut impl std::fmt::Write) -> std::fmt::Result {
                 t.write_str("<p>")
-            }
-            fn closing_tag(&self) -> &'static str {
-                "</p>"
             }
         }
 
@@ -105,9 +103,6 @@ mod tag {
             fn write_opening_tag(&self, t: &mut impl std::fmt::Write) -> std::fmt::Result {
                 t.write_str("<style>")
             }
-            fn closing_tag(&self) -> &'static str {
-                "</style>"
-            }
         }
 
         pub fn style() -> TagStyle {
@@ -166,9 +161,6 @@ mod tag {
         impl SinkableTag for TagH1 {
             fn write_opening_tag(&self, t: &mut impl std::fmt::Write) -> std::fmt::Result {
                 t.write_str("<h1>")
-            }
-            fn closing_tag(&self) -> &'static str {
-                "</h1>"
             }
         }
 
@@ -247,9 +239,6 @@ mod tag {
                     t.write_str("<table>")
                 }
             }
-            fn closing_tag(&self) -> &'static str {
-                "</table>"
-            }
         }
 
         pub fn table() -> TagTable {
@@ -305,14 +294,6 @@ mod tag {
             }
         }
 
-        /*
-        impl<'a, W: std::fmt::Write> Sink<W> for TableSink<'a, W> {
-            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
-                tag.prepare_sink(&mut self.sink)
-            }
-        }
-        */
-
         pub struct HeaderSink<'a, T: std::fmt::Write + ?Sized> {
             sink: &'a mut T,
         }
@@ -336,7 +317,6 @@ mod tag {
                 tag.prepare_sink(&mut self.sink)
             }
         }
-
     }
 
     pub mod th {
@@ -357,9 +337,6 @@ mod tag {
                 } else {
                     t.write_str("<th>")
                 }
-            }
-            fn closing_tag(&self) -> &'static str {
-                "</th>"
             }
         }
 
@@ -440,9 +417,6 @@ mod tag {
                     t.write_str("<tr>")
                 }
             }
-            fn closing_tag(&self) -> &'static str {
-                "</tr>"
-            }
         }
 
         impl TagTr {
@@ -522,9 +496,6 @@ mod tag {
                     t.write_str("<td>")
                 }
             }
-            fn closing_tag(&self) -> &'static str {
-                "</td>"
-            }
         }
 
         impl TagTd {
@@ -603,9 +574,6 @@ mod tag {
                     t.write_str("<a>")
                 }
             }
-            fn closing_tag(&self) -> &'static str {
-                "</a>"
-            }
         }
 
         impl TagA {
@@ -666,7 +634,7 @@ mod tag {
 
     pub mod span {
         use crate::tag::{EnterableTag, Sink, SinkableTag};
-        use crate::{attribute_escape, html_escape};
+        use crate::html_escape;
 
         #[derive(Clone)]
         pub struct TagSpan {
@@ -682,9 +650,6 @@ mod tag {
                 } else {
                     t.write_str("<span>")
                 }
-            }
-            fn closing_tag(&self) -> &'static str {
-                "</span>"
             }
         }
 
@@ -749,12 +714,10 @@ mod tag {
 
     pub trait SinkableTag {
         fn write_opening_tag(&self, t: &mut impl std::fmt::Write) -> std::fmt::Result;
-        fn closing_tag(&self) -> &'static str;
     }
 
     pub struct HtmlSink<'a, T: Write + ?Sized> {
         sink: &'a mut T,
-        closing_tag: &'static str,
     }
 
     impl<'a, T: Write + ?Sized> HtmlSink<'a, T> {
@@ -762,32 +725,20 @@ mod tag {
             sink.write_str("<html>\n").expect("str");
             HtmlSink {
                 sink,
-                closing_tag: "</html>",
             }
         }
     }
 
     impl<'a, T: std::fmt::Write + ?Sized> Drop for HtmlSink<'a, T> {
         fn drop(&mut self) {
-            self.sink.write_str(self.closing_tag).expect("can write closing tag");
             // TODO: configurable pretty-printing
-            self.sink.write_str("\n").expect("newline");
+            self.sink.write_str("</html>").expect("newline");
         }
     }
 
     impl<'a, T: std::fmt::Write + ?Sized> HtmlSink<'a, T> {
         pub fn close(self) {
             std::mem::drop(self);
-        }
-    }
-
-    impl<'a, T: std::fmt::Write + ?Sized> HtmlSink<'a, T> {
-        pub fn untyped_open_tag<'b, Tag: SinkableTag>(&'b mut self, tag: Tag) -> HtmlSink<'b, T> {
-            tag.write_opening_tag(&mut self.sink).expect("opening tag");
-            HtmlSink {
-                sink: &mut self.sink,
-                closing_tag: tag.closing_tag(),
-            }
         }
     }
 
