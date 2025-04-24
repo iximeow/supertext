@@ -1146,6 +1146,90 @@ mod tag {
         }
     }
 
+    pub mod div {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagDiv {
+            style: Option<String>,
+        }
+
+        impl SinkableTag for TagDiv {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.newline()?;
+                if let Some(style) = self.style.as_ref() {
+                    t.write_str("<div style=\"").expect("ok");
+                    t.write_str(style).expect("ok");
+                    t.write_str("\">")?;
+                } else {
+                    t.write_str("<div>")?;
+                }
+                t.indent();
+                Ok(())
+            }
+        }
+
+        impl TagDiv {
+            pub fn style(mut self, rule: &str) -> Self {
+                // TODO: what to do to check style here. obviously `<div>` would be bogus. more
+                // importantly, what to do on an error? returning `Result<Self, Error>` has the
+                // unfortunate consequence of dropping `self` and closing the div. maybe that's
+                // fine. maybe it should come with a poison on the underlying writer?
+                self.style = Some(rule.to_owned());
+                self
+            }
+        }
+
+        pub fn div() -> TagDiv {
+            TagDiv {
+                style: None,
+            }
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagDiv {
+            type Sink<'a> = DivSink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                DivSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct DivSink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> DivSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for DivSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</div>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for DivSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+    }
+
     pub mod span {
         use crate::tag::HtmlWriter;
         use crate::tag::{EnterableTag, Sink, SinkableTag};
@@ -1443,7 +1527,7 @@ pub use tag::{
     style::style, title::title, meta::meta,
     a::a, b::b, p::p, pre::pre,
     h1::h1, h3::h3, h4::h4,
-    td::td,  th::th, tr::tr, span::span,
+    td::td,  th::th, tr::tr, span::span, div::div,
     table::table,
     HtmlSink, head::HeadSink, body::BodySink,
 };
