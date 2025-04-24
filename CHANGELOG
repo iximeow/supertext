@@ -1,3 +1,7 @@
+# 0.0.5
+
+* `Sink::append` to simplify "append tag with no further content"
+
 # 0.0.4
 
 * support div tags

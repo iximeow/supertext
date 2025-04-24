@@ -18,7 +18,7 @@
 //!         style.rule(".odd-row { background: #eee; }")?;
 //!         style.rule(".even-row { background: #ddd; }")?;
 //!     }
-//!     head.open_tag(meta().property("og:type").content("website")).close();
+//!     head.append(meta().property("og:type").content("website"));
 //!
 //!     head.close();
 //!
@@ -1511,6 +1511,10 @@ mod tag {
 
     pub trait Sink<W: HtmlWriter> {
         fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b>;
+        // TODO: should be result-y?
+        fn append<Tag: EnterableTag<W>>(&mut self, tag: Tag) {
+            let _ = self.open_tag(tag);
+        }
     }
 
     pub trait EnterableTag<W: HtmlWriter> {
