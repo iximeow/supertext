@@ -165,6 +165,68 @@ mod tag {
         }
     }
 
+    pub mod b {
+        use crate::tag::HtmlWriter;
+        use crate::tag::{EnterableTag, Sink, SinkableTag};
+        use crate::html_escape;
+
+        #[derive(Clone)]
+        pub struct TagB {}
+
+        impl SinkableTag for TagB {
+            fn write_opening_tag(&self, t: &mut impl HtmlWriter) -> std::fmt::Result {
+                t.write_str("<b>")?;
+                Ok(())
+            }
+        }
+
+        pub fn b() -> TagB {
+            TagB {}
+        }
+
+        impl<W: HtmlWriter> EnterableTag<W> for TagB {
+            type Sink<'a> = BSink<'a, W> where W: 'a;
+
+            const HEADER: bool = false;
+
+            fn prepare_sink<'a>(self, out: &'a mut W) -> Self::Sink<'a> {
+                self.write_opening_tag(out).expect("is ok");
+                BSink {
+                    sink: out,
+                }
+            }
+        }
+
+        pub struct BSink<'a, W: HtmlWriter> {
+            sink: &'a mut W,
+        }
+
+        impl<'a, W: HtmlWriter> BSink<'a, W> {
+            pub fn text(&mut self, text: &str) -> std::fmt::Result {
+                self.sink.write_str(&html_escape(text))?;
+                Ok(())
+            }
+
+            pub fn close(self) {
+                std::mem::drop(self);
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Drop for BSink<'a, W> {
+            fn drop(&mut self) {
+                self.sink.dedent();
+                self.sink.write_str("</b>").expect("can write closing tag");
+            }
+        }
+
+        impl<'a, W: HtmlWriter> Sink<W> for BSink<'a, W> {
+            fn open_tag<'b, Tag: EnterableTag<W>>(&'b mut self, tag: Tag) -> Tag::Sink<'b> {
+                self.sink.indent();
+                tag.prepare_sink(&mut self.sink)
+            }
+        }
+    }
+
     pub mod title {
         use crate::tag::HtmlWriter;
         use crate::tag::{EnterableTag, SinkableTag};
@@ -1379,7 +1441,7 @@ mod tag {
 pub use tag::{
     head::head, body::body,
     style::style, title::title, meta::meta,
-    a::a, p::p, pre::pre,
+    a::a, b::b, p::p, pre::pre,
     h1::h1, h3::h3, h4::h4,
     td::td,  th::th, tr::tr, span::span,
     table::table,

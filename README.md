@@ -84,6 +84,8 @@ links that are invalid. this crate allows syntactically invalid CSS.
 
 ## TODO
 
+- [ ] element nesting could be more principled: sections like `phrasing content`
+      in the HTML spec draw a clearer line about what elements can be nested.
 - [ ] really want to fuzz document construction and ensure no inputs produce
       different trees when parsed than when constructed
 - [ ] really want to be able to check if strings need escaping at compile time
